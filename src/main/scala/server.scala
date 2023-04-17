@@ -5,8 +5,6 @@ import akka.http.scaladsl.model._
 import akka.http.scaladsl.model.headers.RawHeader
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.unmarshalling.Unmarshal
-import restApi.{MapToJson, request}
-
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.{Await, ExecutionContextExecutor, Future}
 import scala.io.StdIn
@@ -15,6 +13,11 @@ import scala.util.{Failure, Success}
 object server extends App {
     implicit val actorSystem: ActorSystem = ActorSystem()
     implicit val ec: ExecutionContextExecutor = actorSystem.dispatcher
+
+    implicit class MapToJson[V](params: Map[String, V]) {
+      def toUrlParams: String = params.map { case (k, v) => s"$k=$v" }.mkString("&")
+    }
+
     private val route = {
       concat(
         path("api") {
@@ -55,6 +58,7 @@ object server extends App {
         }
       )
     }
+
     private val bindingFut = for {
       binding <- Http().newServerAt("localhost", 8080).bind(route)
       _ = println(s"Server running on ${binding.localAddress.getHostName}:${binding.localAddress.getPort}")

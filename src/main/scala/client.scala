@@ -15,6 +15,7 @@ object client extends App {
 
   print("Choose category (shooter, mmorpg): ")
   private val category = readLine()
+
   def request(method: HttpMethod, path: String = "", params: Option[String] = None, body: Option[RequestEntity] = None): HttpRequest =
     HttpRequest(
       method = method,
@@ -22,6 +23,7 @@ object client extends App {
       headers = Seq(),
       entity = body.getOrElse(HttpEntity.Empty)
     )
+
   implicit class UltraHttpRequest(request: HttpRequest) {
     def exec: Future[Response] =
       for {
@@ -31,6 +33,7 @@ object client extends App {
         _ = response.entity.discardBytes()
       } yield Response(status, body)
   }
+
   private val runF = for {
     _ <- request(HttpMethods.GET, path = "/api", params = Some(s"platform=$platform&category=$category")).exec.map(println)
   } yield ()
