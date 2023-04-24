@@ -6,7 +6,7 @@ import akka.http.scaladsl.model.headers.RawHeader
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.unmarshalling.Unmarshal
 import scala.concurrent.duration.DurationInt
-import scala.concurrent.{Await, ExecutionContextExecutor, Future}
+import scala.concurrent.{Await, ExecutionContextExecutor}
 import scala.io.StdIn
 import scala.util.{Failure, Success}
 
@@ -33,20 +33,14 @@ object server extends App {
                 uri = s"https://www.freetogame.com/api/games?$requestParams",
                 headers = Seq(
                   RawHeader("Accept", "application/json")
-                ),
+                )
               )
 
               val responseFuture = Http().singleRequest(freeTopGameRequest)
-              val responseAsString = Await.result(
-                responseFuture.flatMap(resp => Unmarshal(resp.entity).to[String]),
-                10.seconds
-              )
-
-              onComplete(Future {
-                "freeToGameApiResponse"
-              }) {
-                case Success(_) => complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, s"$responseAsString"))
-                case Failure(exception) => complete(InternalServerError, s"An error occurred: ${exception.getMessage}")
+              val awaitResponse = Await.result(responseFuture.flatMap(resp => Unmarshal(resp.entity).to[String]), 10.seconds)
+              responseFuture.value match {
+                case Some(Success(_)) => complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, s"$awaitResponse"))
+                case Some(Failure(e)) => complete(InternalServerError, s"An error occurred while processing your request: $e")
               }
             }
           }
