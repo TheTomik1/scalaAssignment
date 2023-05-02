@@ -9,6 +9,8 @@ import scala.concurrent.duration.DurationInt
 import scala.concurrent.{Await, ExecutionContextExecutor}
 import scala.io.StdIn
 import scala.util.{Failure, Success}
+import spray.json._
+import DefaultJsonProtocol._
 
 object server extends App {
     implicit val actorSystem: ActorSystem = ActorSystem()
@@ -38,8 +40,10 @@ object server extends App {
 
               val responseFuture = Http().singleRequest(freeTopGameRequest)
               val awaitResponse = Await.result(responseFuture.flatMap(resp => Unmarshal(resp.entity).to[String]), 10.seconds)
+              val jsonResponse = awaitResponse.parseJson
+
               responseFuture.value match {
-                case Some(Success(_)) => complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, s"$awaitResponse"))
+                case Some(Success(_)) => complete(HttpEntity(ContentTypes.`application/json`, s"$jsonResponse"))
                 case Some(Failure(e)) => complete(InternalServerError, s"An error occurred while processing your request: $e")
               }
             }
