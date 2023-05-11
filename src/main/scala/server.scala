@@ -10,6 +10,7 @@ import scala.concurrent.{Await, ExecutionContextExecutor}
 import scala.io.StdIn
 import scala.util.{Failure, Success}
 import spray.json._
+import java.sql.{Connection, DriverManager}
 
 object server extends App {
   private case class Game(
@@ -39,6 +40,7 @@ object server extends App {
     import GameProtocol._
     concat(
       path("api") {
+        val connection: Connection = DriverManager.getConnection("jdbc:sqlite:db.sqlite")
         get {
           parameters("platform", Symbol("category")) { (platform, category)  =>
             val requestParams = Map(
@@ -56,11 +58,29 @@ object server extends App {
 
             val responseFuture = Http().singleRequest(freeTopGameRequest)
             val awaitResponse = Await.result(responseFuture.flatMap(resp => Unmarshal(resp.entity).to[String]), 10.seconds)
-            val jsonResponse = awaitResponse.parseJson.convertTo[List[Game]].toJson
+            var finalResponse = awaitResponse.parseJson.convertTo[List[Game]].toJson
 
-            responseFuture.value match {
-              case Some(Success(_)) => complete(HttpEntity(ContentTypes.`application/json`, s"$jsonResponse"))
-              case Some(Failure(e)) => complete(InternalServerError, s"An error occurred while processing your request: $e")
+            try {
+              var dbResponse = ""
+              val statementSelect = connection.prepareStatement("SELECT * FROM apiResponse WHERE jsonResponse = ?")
+              statementSelect.setString(1, awaitResponse)
+              val result = statementSelect.executeQuery()
+              while (result.next()) dbResponse += result.getString(2)
+
+              if (dbResponse == awaitResponse) {
+                finalResponse = dbResponse.parseJson.convertTo[List[Game]].toJson
+              } else {
+                val statement = connection.prepareStatement("INSERT INTO apiResponse values ((SELECT COALESCE(max(id)+1, 1) from apiResponse), ?)")
+                statement.setString(1, awaitResponse)
+                statement.executeUpdate()
+              }
+
+              responseFuture.value match {
+                case Some(Success(_)) => complete(HttpEntity(ContentTypes.`application/json`, s"$finalResponse"))
+                case Some(Failure(e)) => complete(InternalServerError, s"An error occurred while processing your request: $e")
+              }
+            } finally {
+              connection.close()
             }
           }
         }

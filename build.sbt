@@ -16,5 +16,6 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-protobuf-v3" % AkkaVersion,
   "com.typesafe.akka" %% "akka-stream" % AkkaVersion,
   "com.typesafe.akka" %% "akka-http" % "10.5.0",
-  "io.spray" %%  "spray-json" % "1.3.6"
+  "io.spray" %%  "spray-json" % "1.3.6",
+  "org.xerial" % "sqlite-jdbc" % "3.34.0"
 )
