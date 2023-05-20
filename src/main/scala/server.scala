@@ -42,45 +42,60 @@ object server extends App {
       path("api") {
         val connection: Connection = DriverManager.getConnection("jdbc:sqlite:db.sqlite")
         get {
-          parameters("platform", Symbol("category")) { (platform, category)  =>
-            val requestParams = Map(
-              "platform" -> platform,
-              "category" -> category
-            ).toUrlParams
+          connection.createStatement().execute("CREATE TABLE IF NOT EXISTS apiResponse (id SERIAL PRIMARY KEY, jsonResponse TEXT, queryParams TEXT);")
 
-            val freeTopGameRequest = HttpRequest(
-              method = HttpMethods.GET,
-              uri = s"https://www.freetogame.com/api/games?$requestParams",
-              headers = Seq(
-                RawHeader("Accept", "application/json")
+          extractUri { uri =>
+            val platform = uri.query().get("platform").getOrElse("")
+            val category = uri.query().get("category").getOrElse("")
+            val currentParameters = s"platform=$platform&category=$category"
+
+            parameters("platform", Symbol("category")) { (platform, category) =>
+              val requestParams = Map(
+                "platform" -> platform,
+                "category" -> category
+              ).toUrlParams
+
+              val freeTopGameRequest = HttpRequest(
+                method = HttpMethods.GET,
+                uri = s"https://www.freetogame.com/api/games?$requestParams",
+                headers = Seq(
+                  RawHeader("Accept", "application/json")
+                )
               )
-            )
 
-            val responseFuture = Http().singleRequest(freeTopGameRequest)
-            val awaitResponse = Await.result(responseFuture.flatMap(resp => Unmarshal(resp.entity).to[String]), 10.seconds)
-            var finalResponse = awaitResponse.parseJson.convertTo[List[Game]].toJson
+              try {
+                var dbResponse = ""
+                var dbParameters = ""
 
-            try {
-              var dbResponse = ""
-              val statementSelect = connection.prepareStatement("SELECT * FROM apiResponse WHERE jsonResponse = ?")
-              statementSelect.setString(1, awaitResponse)
-              val result = statementSelect.executeQuery()
-              while (result.next()) dbResponse += result.getString(2)
+                val statementSelect = connection.prepareStatement("SELECT * FROM apiResponse WHERE queryParams = ?")
+                statementSelect.setString(1, currentParameters)
+                val result = statementSelect.executeQuery()
+                while (result.next()) {
+                  dbResponse = result.getString(2)
+                  dbParameters = result.getString(3)
+                }
 
-              if (dbResponse == awaitResponse) {
-                finalResponse = dbResponse.parseJson.convertTo[List[Game]].toJson
-              } else {
-                val statement = connection.prepareStatement("INSERT INTO apiResponse values ((SELECT COALESCE(max(id)+1, 1) from apiResponse), ?)")
-                statement.setString(1, awaitResponse)
-                statement.executeUpdate()
+                if (currentParameters == dbParameters) {
+                  dbResponse.parseJson.convertTo[List[Game]].toJson
+                  complete(HttpEntity(ContentTypes.`application/json`, s"$dbResponse"))
+                } else {
+                  val responseFuture = Http().singleRequest(freeTopGameRequest)
+                  val awaitResponse = Await.result(responseFuture.flatMap(resp => Unmarshal(resp.entity).to[String]), 10.seconds)
+                  awaitResponse.parseJson.convertTo[List[Game]].toJson
+
+                  val statement = connection.prepareStatement("INSERT INTO apiResponse values ((SELECT COALESCE(max(id)+1, 1) from apiResponse), ?, ?)")
+                  statement.setString(1, awaitResponse)
+                  statement.setString(2, currentParameters)
+                  statement.executeUpdate()
+
+                  responseFuture.value match {
+                    case Some(Success(_)) => complete(HttpEntity(ContentTypes.`application/json`, s"$awaitResponse"))
+                    case Some(Failure(e)) => complete(InternalServerError, s"An error occurred while processing your request: $e")
+                  }
+                }
+              } finally {
+                connection.close()
               }
-
-              responseFuture.value match {
-                case Some(Success(_)) => complete(HttpEntity(ContentTypes.`application/json`, s"$finalResponse"))
-                case Some(Failure(e)) => complete(InternalServerError, s"An error occurred while processing your request: $e")
-              }
-            } finally {
-              connection.close()
             }
           }
         }
